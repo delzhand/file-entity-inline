@@ -1,56 +1,75 @@
 <?php
 
 /**
- * Implements hook_element_info_alter().
+ * Implements hook_element_info().
  *
  * Add an additional process and validation callback to control the added file
  * entity fields.
  */
-function file_entity_inline_element_info_alter(&$type) {
+function file_entity_inline_element_info() {
   // Define an array of element names to proceed.
-  $file_element_names = array('managed_file');
+  $extra = array('#process' => array('file_entity_inline_field_widget_process'));
 
-  foreach ($file_element_names as $name) {
-    $type[$name]['#process'][] = 'file_entity_inline_field_widget_process';
-    $type[$name]['#element_validate'][] = 'file_entity_inline_field_widget_validate';
+  $elements = array();
+  foreach (file_entity_inline_widgets() as $widget_type => $widget) {
+    $element_type = isset($widget['element_type']) ? $widget['element_type'] : $widget_type;
+    $elements[$element_type] = $extra;
   }
+
+  return $elements;
 }
 
 /**
- * An element #process callback for the file entity. Adds the additional file
- * entity fields to the widget.
+ * An element #process callback for the file entity.
+ *
+ * Adds the additional file entity fields to the widget.
  */
-function file_entity_inline_field_widget_process($element, &$form_state, $form) {
+function file_entity_inline_field_widget_process($element, &$form_state, &$form) {
 
   // Attach the file entity fields to saved files.
-  if ($element['fid']['#value']) {
+  if ($element['fid']['#value'] && isset($element['#entity_type']) && isset($element['#field_name'])) {
 
     // Save the entity information as field_attach_form() will change this.
     $entity_type = $element['#entity_type'];
     $bundle = $element['#bundle'];
+    $langcode = $element['#language'];
 
     $file = file_load($element['fid']['#value']);
-    field_attach_form('file', $file, $element, $form_state);
+
+    $element['entity']['#parents'] = array('files', $file->fid);
+    field_attach_form('file', $file, $element['entity'], $form_state, $langcode);
 
     // Reset the entity information.
     $element['#entity_type'] = $entity_type;
     $element['#bundle'] = $bundle;
+
+    // Add a submit handler to the entire form.
+    if (array_search('file_entity_inline_submit', $form['#submit']) === FALSE) {
+      $form['#submit'][] = 'file_entity_inline_submit';
+    }
   }
 
   return $element;
 }
 
 /**
- * An element #element_validate callback for the file entity. Saves the file
- * entity field values.
+ * An element #element_validate callback for the file entity.
+ *
+ * Saves the file entity field values.
  */
-function file_entity_inline_field_widget_validate($element, &$form_state, $complete_form) {
-  // Only if the form is being submitted, save the field values.
-  if ($form_state['submitted'] && !form_get_errors() && $element['fid']['#value']) {
+function file_entity_inline_submit($form, &$form_state) {
+  // Save any files on the page.
+  if (!isset($form_state['values']['files'])) {
+    return;
+  }
 
-    $file = file_load($element['fid']['#value']);
-    field_attach_submit('file', $file, $element, $form_state);
-    file_entity_file_update($file);
+  foreach ($form_state['values']['files'] as $fid => $file_values) {
+    $file = file_load($fid);
+    $file_form_state = array(
+      'values' => $file_values,
+    );
+    field_attach_submit('file', $file, $form, $file_form_state);
+    file_save($file);
   }
 }
 
