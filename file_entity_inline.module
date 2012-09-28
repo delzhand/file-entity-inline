@@ -1,0 +1,92 @@
+<?php
+
+/**
+ * Implements hook_element_info_alter().
+ *
+ * Add an additional process and validation callback to control the added file
+ * entity fields.
+ */
+function file_entity_inline_element_info_alter(&$type) {
+  // Define an array of element names to proceed.
+  $file_element_names = array('managed_file');
+
+  foreach ($file_element_names as $name) {
+    $type[$name]['#process'][] = 'file_entity_inline_field_widget_process';
+    $type[$name]['#element_validate'][] = 'file_entity_inline_field_widget_validate';
+  }
+}
+
+/**
+ * An element #process callback for the file entity. Adds the additional file
+ * entity fields to the widget.
+ */
+function file_entity_inline_field_widget_process($element, &$form_state, $form) {
+
+  // Attach the file entity fields to saved files.
+  if ($element['fid']['#value']) {
+
+    // Save the entity information as field_attach_form() will change this.
+    $entity_type = $element['#entity_type'];
+    $bundle = $element['#bundle'];
+
+    $file = file_load($element['fid']['#value']);
+    field_attach_form('file', $file, $element, $form_state);
+
+    // Reset the entity information.
+    $element['#entity_type'] = $entity_type;
+    $element['#bundle'] = $bundle;
+  }
+
+  return $element;
+}
+
+/**
+ * An element #element_validate callback for the file entity. Saves the file
+ * entity field values.
+ */
+function file_entity_inline_field_widget_validate($element, &$form_state, $complete_form) {
+  // Only if the form is being submitted, save the field values.
+  if ($form_state['submitted'] && !form_get_errors() && $element['fid']['#value']) {
+
+    $file = file_load($element['fid']['#value']);
+    field_attach_submit('file', $file, $element, $form_state);
+    file_entity_file_update($file);
+  }
+}
+
+/**
+ * Get a list of all supported field widgets.
+ */
+function file_entity_inline_widgets($reset = FALSE) {
+  static $widgets;
+
+  if (!isset($widgets) || $reset) {
+    $widgets = array();
+    foreach (module_implements('file_entity_inline_widgets') as $module) {
+      $module_widgets = module_invoke($module, 'file_entity_inline_widgets');
+      foreach ($module_widgets as $type => $widget) {
+        $module_widgets[$type]['type'] = $type;
+        $module_widgets[$type]['module'] = $module;
+      }
+      $widgets = array_merge($widgets, $module_widgets);
+    }
+    drupal_alter('file_entity_inline_widgets', $widgets);
+  }
+
+  return $widgets;
+}
+
+/**
+ * Implements hook_file_entity_inline_widgets().
+ */
+function file_entity_inline_file_entity_inline_widgets() {
+  $widgets = array();
+  $widgets['file_generic'] = array(
+    'element_type' => 'managed_file',
+  );
+  $widgets['image_image'] = array(
+    'element_type' => 'managed_file',
+  );
+  return $widgets;
+}
+
